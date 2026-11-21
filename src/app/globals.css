@@ -899,3 +899,7 @@ input::placeholder,textarea::placeholder{color:var(--placeholder);}
 .chk-item{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink);cursor:pointer;
   padding:3px 4px;border-radius:4px;}
 .chk-item:hover{background:var(--pearl);}
+
+/* 已结课 / 进行中的课卡：可点击查看，但不可拖拽改期 */
+.p02 .course.is-locked{cursor:not-allowed;}
+.p02 .course.is-locked:hover{box-shadow:none;}

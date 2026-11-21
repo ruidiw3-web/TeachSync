@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Icon } from '@/components/icons'
 import { Toast, useToast } from '@/components/toast'
 import type { FormOptions, ScheduleLesson } from '@/lib/queries'
+import { addDaysYmd, atLocal, diffDays, hmOf, ymdOf } from '@/lib/time'
 import { createLesson, moveLesson } from './actions'
 
 const DOW = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
@@ -19,34 +20,30 @@ type Props = {
 
 type Hint = { level: 'ok' | 'warn' | 'err'; reasons: string[] }
 
-function pad(n: number) {
-  return String(n).padStart(2, '0')
+/** 时间一律按机构时区读，不能用 getHours（服务器在 UTC，会差 8 小时） */
+const hm = hmOf
+const addDays = addDaysYmd
+
+function dayDiff(weekStartYmd: string, iso: string) {
+  return diffDays(weekStartYmd, ymdOf(iso))
 }
 
-function hm(iso: string) {
-  const d = new Date(iso)
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+/** 纯字符串计算周序号，避免服务端/客户端时区不同导致 hydration 不一致 */
+function weekNo(weekStartYmd: string) {
+  const jan1 = `${weekStartYmd.slice(0, 4)}-01-01`
+  return Math.floor(diffDays(jan1, weekStartYmd) / 7) + 1
 }
 
-function addDays(ymd: string, n: number) {
-  const [y, m, d] = ymd.split('-').map(Number)
-  const dt = new Date(y, m - 1, d + n)
-  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
+/**
+ * 课程名本身带「·」（如「初三数学 · 冲刺A班」），
+ * 直接整串当标题会和下一行重复，所以拆成「科目 / 班型」两行。
+ */
+function splitCourse(courseName: string): { name: string; sub: string } {
+  const parts = courseName.split(' · ')
+  if (parts.length >= 2) return { name: parts[0], sub: parts.slice(1).join(' · ') }
+  return { name: courseName, sub: '' }
 }
 
-function dayDiff(ymd: string, iso: string) {
-  const [y, m, d] = ymd.split('-').map(Number)
-  const base = new Date(y, m - 1, d)
-  base.setHours(0, 0, 0, 0)
-  const t = new Date(iso)
-  t.setHours(0, 0, 0, 0)
-  return Math.round((t.getTime() - base.getTime()) / 86400000)
-}
-
-function ymdOf(iso: string) {
-  const d = new Date(iso)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
 
 export function ScheduleBoard({ weekStart, lessons: initial, options }: Props) {
   const router = useRouter()
@@ -105,7 +102,7 @@ export function ScheduleBoard({ weekStart, lessons: initial, options }: Props) {
   }, [visible])
 
   const days = mode === 'week' ? [0, 1, 2, 3, 4, 5, 6] : [dayCursor]
-  const todayYmd = ymdOf(new Date().toISOString())
+  const todayYmd = ymdOf(new Date())
 
   function lessonsAt(day: number, time: string) {
     return visible.filter((l) => dayDiff(weekStart, l.startAt) === day && hm(l.startAt) === time)
@@ -114,9 +111,7 @@ export function ScheduleBoard({ weekStart, lessons: initial, options }: Props) {
   /** 落点冲突预判：教师/教室 = 硬冲突，学生重叠 = 需确认 */
   function checkDrop(lesson: ScheduleLesson, day: number, time: string): Hint & { start: Date; end: Date } {
     const dateYmd = addDays(weekStart, day)
-    const [hh, mm] = time.split(':').map(Number)
-    const [y, m, d] = dateYmd.split('-').map(Number)
-    const start = new Date(y, m - 1, d, hh, mm, 0, 0)
+    const start = atLocal(dateYmd, time)
     const dur = new Date(lesson.endAt).getTime() - new Date(lesson.startAt).getTime()
     const end = new Date(start.getTime() + dur)
 
@@ -150,9 +145,13 @@ export function ScheduleBoard({ weekStart, lessons: initial, options }: Props) {
   }
 
   function onDragStart(e: React.DragEvent, l: ScheduleLesson) {
+    // 已结课/进行中的课次不允许改期，但也要给出反馈，不能静默失败
     if (l.status !== 'SCHEDULED') {
       e.preventDefault()
-      show('只有「待上课」的课次可以拖拽改期', 'warn')
+      show(
+        `「${l.title}」${l.status === 'FINISHED' ? '已结课' : '正在进行'}，不能拖动改期。只有待上课的蓝色课卡可拖。`,
+        'warn'
+      )
       return
     }
     setDrag(l)
@@ -277,11 +276,7 @@ export function ScheduleBoard({ weekStart, lessons: initial, options }: Props) {
           </Link>
           <span className="week-label">
             {weekStart.slice(5).replace('-', '/')} - {addDays(weekStart, 6).slice(5).replace('-', '/')} · 第{' '}
-            {Math.ceil(
-              (new Date(weekStart).getTime() - new Date(new Date(weekStart).getFullYear(), 0, 1).getTime()) /
-                604800000
-            ) + 1}{' '}
-            周
+            {weekNo(weekStart)} 周
           </span>
           <Link className="stepper" href={`/schedule?from=${addDays(weekStart, 7)}`} aria-label="下一周">
             <Icon name="chevron-right" size={12} />
@@ -423,9 +418,7 @@ export function ScheduleBoard({ weekStart, lessons: initial, options }: Props) {
                   return (
                     <div
                       key={t}
-                      className={`cell${items.length === 0 || drag ? ' dz' : ''}${
-                        isHover ? ` dz-${hint.level}` : ''
-                      }`}
+                      className={`cell${drag ? ' dz' : ''}${isHover ? ` dz-${hint.level}` : ''}`}
                       style={isHover ? { borderStyle: 'dashed' } : undefined}
                       onDragOver={(e) => onDragOver(e, d, t)}
                       onDragLeave={() => onDragLeave(d, t)}
@@ -457,7 +450,7 @@ export function ScheduleBoard({ weekStart, lessons: initial, options }: Props) {
                         return (
                           <div
                             key={l.id}
-                            draggable={l.status === 'SCHEDULED'}
+                            draggable
                             onDragStart={(e) => onDragStart(e, l)}
                             onDragEnd={() => {
                               setDrag(null)
@@ -465,11 +458,17 @@ export function ScheduleBoard({ weekStart, lessons: initial, options }: Props) {
                             }}
                             className={`course${live ? ' is-live' : finished ? ' is-amber' : ''}${
                               dragged ? ' is-drag-src' : ''
-                            }`}
-                            title={`${l.title} · ${l.teacherName} · ${l.roomName}`}
+                            }${l.status !== 'SCHEDULED' ? ' is-locked' : ''}`}
+                            title={
+                              l.status === 'SCHEDULED'
+                                ? `${l.title} · ${l.teacherName} · ${l.roomName}（可拖动改期）`
+                                : `${l.title} · ${finished ? '已结课' : '进行中'}，不可拖动改期`
+                            }
                           >
-                            <span className="course-name">{l.courseName}</span>
-                            <span className="course-sub">{l.title}</span>
+                            <span className="course-name">{splitCourse(l.courseName).name}</span>
+                            <span className="course-sub">
+                              {splitCourse(l.courseName).sub || l.title}
+                            </span>
                             <span
                               className={`course-meta${finished ? ' is-amber' : ''}`}
                             >{`${l.roomName} · ${l.studentCount}人`}</span>
@@ -477,9 +476,6 @@ export function ScheduleBoard({ weekStart, lessons: initial, options }: Props) {
                           </div>
                         )
                       })}
-
-                      {items.length === 0 && !isHover && <span />
-                      }
                     </div>
                   )
                 })}

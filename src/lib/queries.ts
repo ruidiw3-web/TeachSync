@@ -1,5 +1,15 @@
 import { createClient } from './supabase/server'
 import { isDemo } from './demo-flag'
+import {
+  addDaysYmd,
+  endOfDay,
+  hmOf,
+  mdOf,
+  monthStartYmd,
+  mondayOf,
+  startOfDay,
+  ymdOf,
+} from './time'
 
 export type DashboardData = {
   todayLessons: number
@@ -29,19 +39,14 @@ const EMPTY_DASH: DashboardData = {
   reviews: [],
 }
 
+/** HH:mm，按机构时区（不要用 toLocaleTimeString，服务器在 UTC） */
 export function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
+  return hmOf(iso)
 }
 
+/** MM-DD，按机构时区 */
 export function fmtDate(d: string | Date) {
-  const t = typeof d === 'string' ? new Date(d) : d
-  const mm = String(t.getMonth() + 1).padStart(2, '0')
-  const dd = String(t.getDate()).padStart(2, '0')
-  return `${mm}-${dd}`
+  return mdOf(d)
 }
 
 // ------------------------------------------------------------
@@ -95,14 +100,9 @@ export async function getDashboard(): Promise<DashboardData> {
 
   try {
     const supabase = await createClient()
-    const now = new Date()
-    const dayStart = new Date(now)
-    dayStart.setHours(0, 0, 0, 0)
-    const dayEnd = new Date(now)
-    dayEnd.setHours(23, 59, 59, 999)
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
-      now.getDate()
-    ).padStart(2, '0')}`
+    const today = ymdOf(new Date())
+    const dayStart = startOfDay(today)
+    const dayEnd = endOfDay(today)
 
     const [lessonsRes, pendingRes, abnormalRes, printsRes, reportsRes, redeemRes, reviewRes] =
       await Promise.all([
@@ -216,9 +216,7 @@ export async function getVerifyData(): Promise<VerifyData> {
 
   try {
     const supabase = await createClient()
-    const monthStart = new Date()
-    monthStart.setDate(1)
-    monthStart.setHours(0, 0, 0, 0)
+    const monthStart = startOfDay(monthStartYmd())
 
     const [openRes, monthRes] = await Promise.all([
       supabase
@@ -422,11 +420,9 @@ export async function getWeekLessons() {
   if (isDemo) return []
   try {
     const supabase = await createClient()
-    const start = new Date()
-    start.setDate(start.getDate() - start.getDay() + 1)
-    start.setHours(0, 0, 0, 0)
-    const end = new Date(start)
-    end.setDate(end.getDate() + 7)
+    const monday = mondayOf(ymdOf(new Date()))
+    const start = startOfDay(monday)
+    const end = startOfDay(addDaysYmd(monday, 7))
 
     const { data } = await supabase
       .from('lessons')

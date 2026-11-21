@@ -2,16 +2,13 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { isDemo } from '@/lib/demo-flag'
 import { fmtTime } from '@/lib/queries'
+import { addDaysYmd, endOfDay, mondayOf, startOfDay, ymdOf } from '@/lib/time'
 
 type Body = { message?: string }
 
 function todayRange() {
-  const now = new Date()
-  const s = new Date(now)
-  s.setHours(0, 0, 0, 0)
-  const e = new Date(now)
-  e.setHours(23, 59, 59, 999)
-  return { s, e, iso: s.toISOString().slice(0, 10) }
+  const iso = ymdOf(new Date())
+  return { s: startOfDay(iso), e: endOfDay(iso), iso }
 }
 
 export async function POST(req: Request) {
@@ -115,12 +112,9 @@ export async function POST(req: Request) {
 
     // ---- 意图：排课冲突 ----
     if (/冲突|撞课|排课/.test(q)) {
-      const now = new Date()
-      const monday = new Date(now)
-      monday.setDate(now.getDate() - ((now.getDay() + 6) % 7))
-      monday.setHours(0, 0, 0, 0)
-      const next = new Date(monday)
-      next.setDate(monday.getDate() + 7)
+      const weekStart = mondayOf(ymdOf(new Date()))
+      const monday = startOfDay(weekStart)
+      const next = startOfDay(addDaysYmd(weekStart, 7))
 
       const { data } = await supabase
         .from('lessons')

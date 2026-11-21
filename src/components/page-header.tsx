@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Icon } from './icons'
 import { useUser } from './user-provider'
 import { ROLE_LABEL } from '@/lib/permissions'
+import { fmtCnDate } from '@/lib/time'
 import { createClient } from '@/lib/supabase/client'
 
 const TITLES: Record<string, string> = {
@@ -34,14 +35,7 @@ export function PageHeader({ title: override }: { title?: string }) {
 
   // 客户端计算，避免服务端/客户端时间不一致导致 hydration 警告
   useEffect(() => {
-    setDateText(
-      new Intl.DateTimeFormat('zh-CN', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        weekday: 'short',
-      }).format(new Date())
-    )
+    setDateText(fmtCnDate(new Date()))
   }, [])
 
   useEffect(() => {
