@@ -1,4 +1,7 @@
+import { cache } from 'react'
+import { cookies } from 'next/headers'
 import type { Role } from './permissions'
+import { projectRefOf, readLocalSession } from './session-cookie'
 
 export type CurrentUser = {
   staffId: string
@@ -32,22 +35,34 @@ function normRole(v: unknown): Role {
   return (ROLES.find((r) => r === s) ?? 'TEACHER') as Role
 }
 
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+async function loadCurrentUser(): Promise<CurrentUser | null> {
   if (isDemo) return DEMO_USER
 
   try {
     const { createClient } = await import('./supabase/server')
     const supabase = await createClient()
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) return null
+    // 先从 cookie 本地取 userId（零网络请求）；
+    // 拿不到时（老会话/分片异常）再退回一次 auth 校验。
+    const jar = await cookies()
+    const local = readLocalSession(
+      jar.getAll(),
+      projectRefOf(process.env.NEXT_PUBLIC_SUPABASE_URL)
+    )
+
+    let userId = local?.userId ?? ''
+    if (!userId) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) return null
+      userId = user.id
+    }
 
     const { data: teacher } = await supabase
       .from('teachers')
       .select('id, name, org_id, role, orgs(name)')
-      .eq('auth_user_id', user.id)
+      .eq('auth_user_id', userId)
       .eq('active', true)
       .maybeSingle()
 
@@ -67,3 +82,8 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     return null
   }
 }
+
+/**
+ * 同一次请求内多处调用只查一次库（layout 与 page 常各调一次）。
+ */
+export const getCurrentUser = cache(loadCurrentUser)

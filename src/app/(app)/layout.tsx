@@ -12,8 +12,8 @@ export const instant = false
 export default async function AppLayout({ children }: LayoutProps<'/'>) {
   await connection()
 
-  const user = await getCurrentUser()
-  const counts = await getNavCounts()
+  // 并行：原来两个查询串行，白白叠了一次数据库往返
+  const [user, counts] = await Promise.all([getCurrentUser(), getNavCounts()])
 
   return (
     <UserProvider user={user}>

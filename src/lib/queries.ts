@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { createClient } from './supabase/server'
 import { isDemo } from './demo-flag'
 import {
@@ -52,8 +53,16 @@ export function fmtDate(d: string | Date) {
 // ------------------------------------------------------------
 // 侧边栏徽标
 // ------------------------------------------------------------
-export async function getNavCounts(): Promise<Record<string, number>> {
+/**
+ * 徽标计数是 5 个精确 count（全表统计），是首屏最贵的一笔。
+ * 加 20 秒进程内缓存：核销/排课之后最多迟 20 秒刷新，换掉每次导航都重算。
+ */
+const NAV_TTL_MS = 20_000
+let navCache: { at: number; data: Record<string, number> } | null = null
+
+async function loadNavCounts(): Promise<Record<string, number>> {
   if (isDemo) return {}
+  if (navCache && Date.now() - navCache.at < NAV_TTL_MS) return navCache.data
   try {
     const supabase = await createClient()
     const [verify, mistakes, points, reports, prints] = await Promise.all([
@@ -86,11 +95,15 @@ export async function getNavCounts(): Promise<Record<string, number>> {
       reports: reports.count ?? 0,
       tasks: (prints.count ?? 0) + (reports.count ?? 0) + (points.count ?? 0),
     }
+    navCache = { at: Date.now(), data: n }
     return n
   } catch {
     return {}
   }
 }
+
+/** 同一次请求内多处调用只算一次 */
+export const getNavCounts = cache(loadNavCounts)
 
 // ------------------------------------------------------------
 // 工作台
