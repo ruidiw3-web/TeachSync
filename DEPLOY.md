@@ -1,6 +1,13 @@
 # TeachSync 教师端 · 部署手册
 
-面向：本地已跑通，要上线到 Vercel。
+**当前线上地址：https://teachsync-ykxl.netlify.app**
+（注意是字母 `l`，不是数字 `1`）
+
+- 托管：Netlify，已绑定 GitHub 仓库 `ruidiw3-web/TeachSync` 的 `main` 分支
+- 每次 `git push` 到 main 会自动重新构建部署
+- ⚠️ Netlify 新版界面导入项目时**默认开启 Edge Access（站点私有）**，
+  外网访问会 401。必须在 Site configuration → Access & security 里关掉，
+  或者调 API：`PATCH /api/v1/sites/{id}` body `{"sso_login":false}`
 
 ---
 
