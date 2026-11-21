@@ -1,0 +1,9 @@
+# 不要把本地密钥和自检脚本传到 Vercel
+.env*
+!.env.local.example
+scripts/
+supabase/
+.tmp-*
+DEPLOY.md
+AGENTS.md
+FRONTEND_SPEC.md
