@@ -1,12 +1,13 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { Icon } from './icons'
 import { useUser } from './user-provider'
 
-type Msg = { role: 'user' | 'bot'; text: string }
+type Msg = { role: 'user' | 'bot'; text: string; href?: string; actionLabel?: string }
 
-const SUGGEST = ['今天还有几节课', '还有多少笔待核销', '张伟还剩多少课时', '本周排课有冲突吗']
+const SUGGEST = ['跑一次体检', '今天还有几节课', '还有多少笔待核销', '本周排课有冲突吗']
 
 export function AiDock() {
   const user = useUser()
@@ -59,6 +60,55 @@ export function AiDock() {
     }
   }
 
+  /** Agent 巡检：跑一套规则，把命中项汇总成一条可跳转的结论 */
+  async function checkup() {
+    if (busy) return
+    setMsgs((m) => [...m, { role: 'user', text: '跑一次体检，看看今天有什么要处理的' }])
+    setBusy(true)
+    try {
+      const res = await fetch('/api/agent', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'scan' }),
+      })
+      const r = (await res.json()) as {
+        error?: string
+        signals?: Array<{ severity: string; title: string }>
+        counts?: { high: number; todo: number; draft: number; total: number }
+        ruleBook?: unknown[]
+      }
+      if (!res.ok || !r.counts) throw new Error(r.error || `HTTP ${res.status}`)
+
+      const counts = r.counts
+      const ruleCount = r.ruleBook?.length ?? 0
+      const head =
+        counts.total === 0
+          ? `巡检了 ${ruleCount} 条规则，全部通过，今天没有需要处理的异常。`
+          : `巡检 ${ruleCount} 条规则，命中 ${counts.total} 条：高危 ${counts.high}、待办 ${counts.todo}、待生成草稿 ${counts.draft} 份。`
+      const lines = (r.signals ?? [])
+        .slice(0, 4)
+        .map((s) => `${s.severity === 'high' ? '●' : '○'} ${s.title}`)
+      const more = counts.total > 4 ? `\n……还有 ${counts.total - 4} 条` : ''
+
+      setMsgs((m) => [
+        ...m,
+        {
+          role: 'bot',
+          text: lines.length > 0 ? `${head}\n${lines.join('\n')}${more}` : head,
+          href: counts.total > 0 ? '/tasks' : undefined,
+          actionLabel: '打开任务中心',
+        },
+      ])
+    } catch {
+      setMsgs((m) => [
+        ...m,
+        { role: 'bot', text: '体检没跑起来，可能是网络或服务临时异常，稍后再试一次。' },
+      ])
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="ai-dock">
       {open && (
@@ -83,6 +133,12 @@ export function AiDock() {
                   <div className="ai-bubble" style={{ whiteSpace: 'pre-wrap' }}>
                     {m.text}
                   </div>
+                  {m.href && (
+                    <Link href={m.href} className="ai-msg-link" onClick={() => setOpen(false)}>
+                      {m.actionLabel ?? '查看详情'}
+                      <Icon name="chevron-right" size={11} />
+                    </Link>
+                  )}
                 </div>
               </div>
             ))}
@@ -92,7 +148,12 @@ export function AiDock() {
           <div className="ai-panel-foot">
             <div className="ai-suggest">
               {SUGGEST.map((s) => (
-                <button key={s} className="ai-suggest-chip" onClick={() => ask(s)} disabled={busy}>
+                <button
+                  key={s}
+                  className={`ai-suggest-chip${s === '跑一次体检' ? ' is-agent' : ''}`}
+                  onClick={() => (s === '跑一次体检' ? checkup() : ask(s))}
+                  disabled={busy}
+                >
                   {s}
                 </button>
               ))}

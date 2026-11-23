@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { isDemo } from '@/lib/demo-flag'
 import { fmtTime } from '@/lib/queries'
+import { runAgentScan } from '@/lib/agent/scan'
 import { addDaysYmd, endOfDay, mondayOf, startOfDay, ymdOf } from '@/lib/time'
 
 type Body = { message?: string }
@@ -187,6 +188,25 @@ export async function POST(req: Request) {
       ])
       return NextResponse.json({
         answer: `错题讲解待处理 ${prints.count ?? 0} 份，已逾期未复习 ${overdue.count ?? 0} 条。\n逾期复习建议优先安排，复习周期拖长会明显降低留存。`,
+      })
+    }
+
+    // ---- 意图：Agent 巡检（异常预警 / 待办 / 待生成草稿） ----
+    if (/体检|巡检|预警|风险|待办事项/.test(q)) {
+      const report = await runAgentScan()
+      if (report.counts.total === 0) {
+        return NextResponse.json({
+          answer: `巡检了 ${report.ruleBook.length} 条规则，全部通过，今天没有需要处理的异常。`,
+        })
+      }
+      const lines = report.signals.slice(0, 6).map((s) => {
+        const tag = s.severity === 'high' ? '● 高危' : s.severity === 'medium' ? '○ 待办' : '· 可延后'
+        return `${tag}｜${s.title}`
+      })
+      return NextResponse.json({
+        answer: `巡检 ${report.ruleBook.length} 条规则，命中 ${report.counts.total} 条（高危 ${report.counts.high} / 待办 ${report.counts.todo} / 待生成草稿 ${report.counts.draft}）：\n${lines.join(
+          '\n'
+        )}${report.counts.total > 6 ? `\n……还有 ${report.counts.total - 6} 条` : ''}\n\n完整清单在「任务中心」，每条都能点进去直接处理。`,
       })
     }
 
