@@ -231,7 +231,7 @@ export async function getVerifyData(): Promise<VerifyData> {
     const supabase = await createClient()
     const monthStart = startOfDay(monthStartYmd())
 
-    const [openRes, monthRes] = await Promise.all([
+    const [openRes, monthRes, pkgRes] = await Promise.all([
       supabase
         .from('consumptions')
         .select(
@@ -245,6 +245,11 @@ export async function getVerifyData(): Promise<VerifyData> {
         .select('status', { count: 'exact' })
         .gte('created_at', monthStart.toISOString())
         .limit(1000),
+      // 和上面并行取回：原来要等第一批判完才按 studentIds 去查，白叠一次往返
+      supabase
+        .from('hour_packages')
+        .select('student_id, total_hours, used_hours')
+        .eq('status', 'ACTIVE'),
     ])
 
     const raw = (openRes.data ?? []) as unknown as Array<{
@@ -258,19 +263,13 @@ export async function getVerifyData(): Promise<VerifyData> {
       lessons: { title: string; start_at: string; courses: { name: string } | null } | null
     }>
 
-    // 剩余课时：按 student 聚合课时包
-    const studentIds = [...new Set(raw.map((r) => r.student_id))]
+    // 剩余课时：按 student 聚合课时包（已在上面并行取回）
+    const studentIds = new Set(raw.map((r) => r.student_id))
     const leftMap = new Map<string, number>()
-    if (studentIds.length > 0) {
-      const { data: pkgs } = await supabase
-        .from('hour_packages')
-        .select('student_id, total_hours, used_hours')
-        .in('student_id', studentIds)
-        .eq('status', 'ACTIVE')
-      for (const p of pkgs ?? []) {
-        const left = Number(p.total_hours) - Number(p.used_hours)
-        leftMap.set(p.student_id, (leftMap.get(p.student_id) ?? 0) + left)
-      }
+    for (const p of pkgRes.data ?? []) {
+      if (!studentIds.has(p.student_id)) continue
+      const left = Number(p.total_hours) - Number(p.used_hours)
+      leftMap.set(p.student_id, (leftMap.get(p.student_id) ?? 0) + left)
     }
 
     const rows: VerifyRow[] = raw.map((r) => ({
