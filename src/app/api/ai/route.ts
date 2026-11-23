@@ -200,7 +200,14 @@ export async function POST(req: Request) {
         })
       }
       const lines = report.signals.slice(0, 6).map((s) => {
-        const tag = s.severity === 'high' ? '● 高危' : s.severity === 'medium' ? '○ 待办' : '· 可延后'
+        const tag =
+          s.kind === 'DRAFT'
+            ? '✎ 草稿'
+            : s.severity === 'high'
+              ? '● 高危'
+              : s.severity === 'medium'
+                ? '○ 待办'
+                : '· 可延后'
         return `${tag}｜${s.title}`
       })
       return NextResponse.json({
