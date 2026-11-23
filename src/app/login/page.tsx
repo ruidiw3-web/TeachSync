@@ -4,15 +4,25 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { isDemo } from '@/lib/demo-flag'
 
+/**
+ * 演示账号：公开可用，专供分享链接 / 面试体验。
+ * 输入框默认填好，也可以被 NEXT_PUBLIC_DEMO_EMAIL / _PASSWORD 覆盖。
+ */
+const DEMO_EMAIL = process.env.NEXT_PUBLIC_DEMO_EMAIL || 'demo@teachsync.app'
+const DEMO_PASSWORD = process.env.NEXT_PUBLIC_DEMO_PASSWORD || 'TeachSyncDemo2026'
+
 export default function LoginPage() {
   const router = useRouter()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [email, setEmail] = useState(DEMO_EMAIL)
+  const [password, setPassword] = useState(DEMO_PASSWORD)
+  const [loading, setLoading] = useState<'demo' | 'form' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function signIn(
+    withEmail: string,
+    withPassword: string,
+    mode: 'demo' | 'form'
+  ) {
     setError(null)
 
     if (isDemo) {
@@ -20,13 +30,13 @@ export default function LoginPage() {
       return
     }
 
-    setLoading(true)
+    setLoading(mode)
     try {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
       const { error: err } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+        email: withEmail,
+        password: withPassword,
       })
       if (err) {
         setError(
@@ -34,14 +44,14 @@ export default function LoginPage() {
             ? '邮箱或密码不正确'
             : err.message
         )
+        setLoading(null)
         return
       }
       router.push('/today')
       router.refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : '登录失败，请重试')
-    } finally {
-      setLoading(false)
+      setLoading(null)
     }
   }
 
@@ -93,15 +103,59 @@ export default function LoginPage() {
           </h2>
           <p
             style={{
-              margin: '6px 0 22px',
+              margin: '6px 0 20px',
               fontSize: 13,
               color: 'var(--ink-48)',
             }}
           >
-            账号由机构管理员开通
+            无需账号，一键进入演示环境
           </p>
 
-          <form onSubmit={handleSubmit}>
+          {/* 主路径：一键演示 */}
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ width: '100%', justifyContent: 'center', height: 42 }}
+            onClick={() => signIn(DEMO_EMAIL, DEMO_PASSWORD, 'demo')}
+            disabled={loading !== null}
+          >
+            {loading === 'demo' ? '正在进入…' : '一键进入演示环境'}
+          </button>
+
+          <p
+            style={{
+              margin: '10px 0 0',
+              fontSize: 12,
+              lineHeight: 1.6,
+              color: 'var(--ink-40)',
+              textAlign: 'center',
+            }}
+          >
+            完整功能的样例数据，可自由点开任何页面
+          </p>
+
+          {/* 分隔 */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              margin: '22px 0 18px',
+            }}
+          >
+            <span style={{ flex: 1, height: 1, background: 'var(--hairline)' }} />
+            <span style={{ fontSize: 12, color: 'var(--ink-40)' }}>
+              或使用机构账号登录
+            </span>
+            <span style={{ flex: 1, height: 1, background: 'var(--hairline)' }} />
+          </div>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              signIn(email, password, 'form')
+            }}
+          >
             <div className="form-label">邮箱</div>
             <input
               type="email"
@@ -117,7 +171,7 @@ export default function LoginPage() {
             <input
               type="password"
               className="form-input"
-              style={{ width: '100%', marginBottom: 20 }}
+              style={{ width: '100%', marginBottom: 18 }}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
@@ -141,11 +195,11 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              className="btn btn-primary"
-              style={{ width: '100%', justifyContent: 'center', height: 40 }}
-              disabled={loading}
+              className="btn"
+              style={{ width: '100%', justifyContent: 'center', height: 38 }}
+              disabled={loading !== null}
             >
-              {loading ? '登录中…' : isDemo ? '进入演示环境' : '登录'}
+              {loading === 'form' ? '登录中…' : isDemo ? '进入演示环境' : '登录'}
             </button>
           </form>
         </div>
@@ -159,9 +213,7 @@ export default function LoginPage() {
             textAlign: 'center',
           }}
         >
-          {isDemo
-            ? '当前为演示模式（未连接数据库），数据为样例。配置 Supabase 后自动切换。'
-            : '忘记密码请联系机构管理员重置'}
+          演示账号已自动填好，直接登录也可以
         </p>
       </div>
     </div>
